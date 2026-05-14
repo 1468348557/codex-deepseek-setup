@@ -4,29 +4,50 @@
   <img src="https://img.shields.io/badge/Codex-Desktop-blue?style=for-the-badge&logo=openai" alt="Codex">
   <img src="https://img.shields.io/badge/DeepSeek-V4_Pro-purple?style=for-the-badge&logo=deepseek" alt="DeepSeek V4 Pro">
   <img src="https://img.shields.io/badge/Protocol-Responses_API_↔_Chat_Completions-green?style=for-the-badge" alt="Protocol Translation">
-  <img src="https://img.shields.io/badge/Status-Stable-success?style=for-the-badge" alt="Status">
+  <img src="https://img.shields.io/badge/Auto_Setup-Skill_Powered-orange?style=for-the-badge" alt="Auto Setup">
 </p>
 
 <p align="center">
-  <b>一桥飞架南北，天堑变通途。</b><br>
-  让 OpenAI Codex 无缝接入 DeepSeek V4 Pro，享受国产顶级大模型的代码能力。
+  <b>不是一份文档，而是一个能替你干活儿 Codex Skill。</b><br>
+  把 DeepSeek V4 Pro 接入 Codex 的配置、代理、修复——<b>全自动</b>完成。
 </p>
 
 ---
 
-## 🤔 为什么需要这个？
+## 🤯 一句话说清楚
 
-|  | OpenAI (Codex 默认) | DeepSeek V4 Pro |
-|---|---|---|
-| **价格** | 💰💰💰 | 💰 |
-| **代码能力** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **中文理解** | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
-| **Thinking Mode** | ✅ | ✅ |
-| **协议兼容** | Responses API | Chat Completions ❌ |
+Codex 说 Responses API，DeepSeek 说 Chat Completions API，两者母语不通。
 
-**问题：** Codex 只说 Responses API，DeepSeek 只说 Chat Completions API——两种协议天生不兼容。
+本项目提供两样东西：
+- 🧠 **一个 Local Proxy**：实时翻译两种协议（`codex-bridge`）
+- 🤖 **一个 Codex Skill**：让 Codex 自己帮你配好一切
 
-**解决：** `codex-bridge` 在本地做实时双向协议翻译，让你零感知切换后端。
+**结果：你对 Codex 说「帮我接入 DeepSeek」，Codex 读这份 skill，然后自己搞定全部。**
+
+---
+
+## 🪄 使用方式（两种）
+
+### 方式一：Skill 自动配置（推荐 ⭐）
+
+1. 将 `codex-deepseek-setup.md` 安装为 Codex Skill：
+   ```bash
+   mkdir -p ~/.codex/skills/codex-deepseek
+   cp codex-deepseek-setup.md ~/.codex/skills/codex-deepseek/SKILL.md
+   ```
+
+2. 打开 Codex 对话框，输入：
+   ```
+   帮我接入 DeepSeek
+   ```
+
+3. Codex 读 skill → 自动检查环境 → 克隆代理 → 写配置 → 修复路由 → 启动服务 → 验证连通。
+
+   **你唯一需要做的：提供一个 DeepSeek API Key。**
+
+### 方式二：手动参照文档
+
+打开 [codex-deepseek-setup.md](./codex-deepseek-setup.md)，照着十步走。
 
 ---
 
@@ -46,56 +67,20 @@
 
 ---
 
-## ⚡ 三分钟接入
+## 📖 Skill 能自动完成的事
 
-### 前置要求
-
-- Node.js ≥ 18
-- Codex 已安装
-- DeepSeek API Key（[免费获取](https://platform.deepseek.com/api_keys)）
-
-### 1️⃣ 克隆代理
-
-```bash
-git clone https://github.com/wujfeng712-ui/codex-bridge.git ~/.codex/codex-bridge
-```
-
-### 2️⃣ 配置密钥
-
-```bash
-# ~/.codex/codex-bridge/.env
-PROXY_AUTH_KEY=sk-proxy-local-$(openssl rand -hex 24)
-DEEPSEEK_API_KEY=sk-你的DeepSeek密钥
-DEEPSEEK_MODELS=deepseek-v4-pro,deepseek-v4-flash,deepseek-reasoner
-DEFAULT_PROVIDER=deepseek
-LOG_LEVEL=info
-MODEL_CATALOG_PATH=~/.codex/proxy-models.json
-```
-
-### 3️⃣ 配置 Codex
-
-```toml
-# ~/.codex/config.toml
-model = "deepseek-v4-pro"
-model_provider = "local_proxy"
-model_catalog_json = "/Users/你的用户名/.codex/proxy-models.json"
-
-[model_providers.local_proxy]
-name = "local_proxy"
-base_url = "http://127.0.0.1:4000/v1"
-wire_api = "responses"
-requires_openai_auth = true
-```
-
-### 4️⃣ 启动！
-
-重启 Codex，一切就绪 🎉
-
----
-
-## 📖 完整文档
-
-👉 [codex-deepseek-setup.md](./codex-deepseek-setup.md) — 包含完整配置、自动启动、故障排查等所有细节。
+| 步骤 | 内容 | 方式 |
+|------|------|------|
+| 环境检查 | Node.js / Codex 版本 | 执行命令 |
+| 克隆代理 | codex-bridge 到本地 | 执行命令 |
+| 生成密钥 | PROXY_AUTH_KEY | 自动生成 |
+| 写入配置 | .env / config.toml / auth.json | 文件编辑 |
+| 模型目录 | proxy-models.json | 文件创建 |
+| 修复代理 | proxy.mjs 路由补丁 | 文件编辑 |
+| 开机自启 | macOS launchd plist | 文件创建 + 命令 |
+| 环境变量 | NO_PROXY + 别名 | Shell 配置 |
+| 验证连通 | 代理 + 端到端 | 执行命令 |
+| 故障排查 | 6 类常见问题 | 自动诊断 |
 
 ---
 
@@ -109,39 +94,29 @@ requires_openai_auth = true
 
 ---
 
-## 🔧 常见问题
+## 📦 文件说明
 
-<details>
-<summary><b>代理无法启动？</b></summary>
-
-```bash
-# 检查端口占用
-lsof -i :4000
-# 手动启动测试
-cd ~/.codex/codex-bridge && node proxy.mjs
 ```
-</details>
+.
+├── README.md                    # 你正在看的这个
+└── codex-deepseek-setup.md      # Codex Skill 定义（核心文件）
+```
 
-<details>
-<summary><b>Codex 连不上代理？</b></summary>
+---
 
-确认 `~/.codex/config.toml` 中 `base_url` 指向 `http://127.0.0.1:4000/v1`
-</details>
+## 🔗 依赖项目
 
-<details>
-<summary><b>如何切换回 OpenAI？</b></summary>
-
-将 `config.toml` 中 `model_provider` 改回默认值，或直接注释掉相关配置。
-</details>
+- [codex-bridge](https://github.com/wujfeng712-ui/codex-bridge) — 本地协议代理
+- [CC Switch](https://github.com/farion1231/cc-switch) — Codex 供应商管理（推荐）
 
 ---
 
 ## ⭐ Star History
 
-如果这个项目帮到了你，请给一个 Star ⭐ 让更多人看到！
+如果这个项目省了你半小时折腾配置的时间，给个 Star ⭐ 让更多人少走弯路！
 
 ---
 
 <p align="center">
-  <sub>Made with ❤️ by the Codex community · 让 AI 编程没有边界</sub>
+  <sub>Made with ❤️ by the Codex community · 让 AI 编程没有语言障碍</sub>
 </p>
