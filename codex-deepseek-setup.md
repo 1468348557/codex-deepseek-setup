@@ -1,95 +1,130 @@
 ---
-name: codex-deepseek-setup
-description: Configure Codex (desktop/CLI) to use DeepSeek V4 Pro via codex-bridge proxy. Handles protocol translation (Responses API ↔ Chat Completions), model catalog setup, proxy auto-start, and troubleshooting. Use when user wants to connect Codex to DeepSeek, switch Codex backend to DeepSeek, or fix Codex-DeepSeek integration issues.
+name: codex-model-integration
+description: 通用的 Codex 第三方大模型接入 Skill。支持 DeepSeek、Qwen、Claude、Gemini、Mistral、Groq 等任意 Chat Completions 兼容模型。教你如何为任何模型搭建本地代理、配置 Codex 协议翻译、写入模型目录、自动诊断常见问题。触发词包括"接入 XXX 模型"、"换 XXX 模型"、"Codex 用 XXX"、"配模型"、"模型连不上"等。
 metadata:
   type: skill
   triggers:
-    - codex deepseek
-    - codex 接入 deepseek
-    - codex-bridge
-    - codex deepseek v4
-    - codex 换 deepseek
-    - codex 配置 deepseek
-    - deepseek 配置
-    - deepseek 接入
+    - 接入
+    - 模型
+    - 换模型
+    - 配置模型
+    - 连不上
+    - 模型连不上
+    - deepseek
+    - qwen
+    - claude
+    - gemini
+    - mistral
+    - groq
+    - 通义千问
+    - 千问
+    - codex 模型
+    - 第三方模型
 ---
 
-# Codex + DeepSeek V4 Pro 接入
+# Codex 第三方大模型通用接入
 
-> **你的角色：** 你是用户的 Codex 助手。本 skill 指导你**自动**帮用户完成 DeepSeek 接入的每一步——执行命令、编辑配置、验证连通性。用户只需提供 DeepSeek API Key，其余全部由你完成。
+> **你的角色：** 你是用户的 Codex 助手。用户想把 Codex 接入某个第三方大模型（DeepSeek/Qwen/Claude/Gemini/...任意 Chat Completions 兼容 API）。本 skill 教你怎么一步步自动完成——从搭代理、写配置、到端到端验证。
 
-## 架构
+## 核心原理
+
+Codex 默认只说 **Responses API**（OpenAI 专有协议），而几乎所有第三方模型只说 **Chat Completions API**（行业事实标准）。
+
+解决方案：在本地搭一个轻量代理 `codex-bridge`，实时做 Responses ↔ Chat Completions 双向翻译。
 
 ```
-Codex ──Responses API──▶ codex-bridge (:4000) ──Chat Completions──▶ api.deepseek.com
+Codex ──Responses API──▶ codex-bridge (:4000) ──Chat Completions──▶ 任意模型 API
 ```
 
-Codex 只说 **Responses API**，DeepSeek 只说 **Chat Completions API**，协议不兼容。codex-bridge 做本地双向翻译（SSE 流式、工具调用、thinking-mode）。
+不管目标模型是什么（DeepSeek、千问、Claude、Gemini……），只要它提供 OpenAI 兼容的 Chat Completions 端点，就能接。
 
 ---
 
 ## 🤖 自动接入流程
 
-按以下顺序执行，每步完成后报告状态给用户。
+### 第 0 步：搞清楚用户要接什么
 
-### 步骤 0：收集信息
+问用户三件事：
 
-先询问用户两个信息：
-1. **DeepSeek API Key**（从 https://platform.deepseek.com/api_keys 获取）
-2. **用户名**（macOS 用户目录名，默认执行 `whoami` 推断）
+1. **目标模型 / 供应商**（如 deepseek / qwen / claude / gemini / groq / mistral）
+2. **API 地址**（base URL，如 `https://api.deepseek.com/v1`、`https://dashscope.aliyuncs.com/compatible-mode/v1`）
+3. **API Key**（去哪里申请也告诉用户）
 
-执行 `whoami` 获取用户名，与用户确认。如果用户已提供 API Key，直接继续。
+如果用户不清楚 API 地址，根据常见供应商推断：
+
+| 用户说 | 大概率 base URL |
+|--------|----------------|
+| DeepSeek | `https://api.deepseek.com/v1` |
+| 千问 / Qwen / 通义千问 / DashScope | `https://dashscope.aliyuncs.com/compatible-mode/v1` |
+| Claude / Anthropic | 不走通用代理（需 Anthropic Messages API） |
+| Gemini / Google | `https://generativelanguage.googleapis.com/v1beta`（需额外适配） |
+| Groq | `https://api.groq.com/openai/v1` |
+| Mistral | `https://api.mistral.ai/v1` |
+| Together AI | `https://api.together.xyz/v1` |
+| SiliconFlow / 硅基流动 | `https://api.siliconflow.cn/v1` |
+| 智谱 / GLM / Zhipu | `https://open.bigmodel.cn/api/paas/v4` |
+| Moonshot / Kimi | `https://api.moonshot.cn/v1` |
+| 百川 / Baichuan | `https://api.baichuan-ai.com/v1` |
+| 零一万物 / Yi | `https://api.lingyiwanwu.com/v1` |
+| DeepSeek / 火山引擎 | `https://ark.cn-beijing.volces.com/api/v3` |
+| OpenRouter | `https://openrouter.ai/api/v1` |
+
+如果不在上表，告诉用户："给模型名称 + Chat Completions base URL + API Key 即可，我来搞定剩下的。"
+
+执行 `whoami` 取用户名，后续配置路径要用。
 
 ---
 
-### 步骤 1：环境检查
-
-依次检查并报告结果：
+### 第 1 步：环境检查
 
 ```bash
-node --version          # 需 ≥ 18
-codex --version         # 确认已安装
-whoami                  # 记录用户名，后续配置要用
+node --version    # ≥ 18 才行
+whoami            # 记下用户名
 ```
-
-如果依赖缺失，告诉用户安装方法再继续。
 
 ---
 
-### 步骤 2：克隆 codex-bridge
+### 第 2 步：克隆 codex-bridge
 
 ```bash
 git clone https://github.com/wujfeng712-ui/codex-bridge.git ~/.codex/codex-bridge
 ```
 
-如果目标目录已存在，跳过克隆，直接进入下一步。
+已存在则跳过。
 
 ---
 
-### 步骤 3：生成 .env 配置
+### 第 3 步：写入 .env
 
-**用文件写入工具**创建 `~/.codex/codex-bridge/.env`，内容如下（将 `<用户名>` 和 `<API_KEY>` 替换为实际值）：
+路径：`~/.codex/codex-bridge/.env`
 
 ```bash
-PROXY_AUTH_KEY=sk-proxy-local-<RANDOM_HEX_24>
-DEEPSEEK_API_KEY=<用户提供的API_KEY>
-DEEPSEEK_MODELS=deepseek-v4-pro,deepseek-v4-flash,deepseek-reasoner
-DEFAULT_PROVIDER=deepseek
+PROXY_AUTH_KEY=sk-proxy-local-$(openssl rand -hex 24  > /dev/null 2>&1 && openssl rand -hex 24 || echo "replace-with-random-hex")
+# 如果 openssl 不可用，手动生成 48 位随机十六进制字符串
+```
+
+完整内容：
+
+```
+PROXY_AUTH_KEY=<生成的值>
+PROVIDER_API_KEY=<用户的API_KEY>
+PROVIDER_BASE_URL=<用户的BASE_URL>
+PROVIDER_MODELS=<模型名列表，逗号分隔>
+DEFAULT_PROVIDER=<供应商简称>
 LOG_LEVEL=info
 MODEL_CATALOG_PATH=/Users/<用户名>/.codex/proxy-models.json
 ```
 
-`<RANDOM_HEX_24>` 用 `openssl rand -hex 24` 生成。记下 `PROXY_AUTH_KEY` 的值，步骤 5 要用。
+**重要：记下 `PROXY_AUTH_KEY` 的值，后续配置 auth.json 要用。**
 
 ---
 
-### 步骤 4：配置 Codex config.toml
+### 第 4 步：写入 config.toml
 
-**读取或创建** `~/.codex/config.toml`，确保包含以下内容（合并到已有配置，不要覆盖无关字段）：
+**合并到** `~/.codex/config.toml`（已有字段保留，只增改这几个）：
 
 ```toml
-cli_auth_credentials_store = "file"
-model = "deepseek-v4-pro"
+model = "<默认模型slug>"
 model_provider = "local_proxy"
 model_catalog_json = "/Users/<用户名>/.codex/proxy-models.json"
 
@@ -105,89 +140,87 @@ trust_level = "trusted"
 
 ---
 
-### 步骤 5：配置 auth.json
+### 第 5 步：写入 auth.json
 
-**创建** `~/.codex/auth.json`（注意 `OPENAI_API_KEY` 的值来自步骤 3 的 `PROXY_AUTH_KEY`）：
+路径：`~/.codex/auth.json`
 
 ```json
 {
   "auth_mode": "apikey",
-  "OPENAI_API_KEY": "sk-proxy-local-<步骤3的RANDOM_HEX>"
+  "OPENAI_API_KEY": "<第3步的PROXY_AUTH_KEY>"
 }
 ```
 
 ---
 
-### 步骤 6：创建模型元数据 catalog
+### 第 6 步：生成模型目录
 
-**创建** `~/.codex/proxy-models.json`：
+路径：`~/.codex/proxy-models.json`
+
+根据用户要接的模型，生成条目。每条格式：
 
 ```json
 {
-  "models": [
-    {
-      "slug": "deepseek-v4-pro",
-      "display_name": "DeepSeek v4 Pro",
-      "default_reasoning_level": "medium",
-      "supported_reasoning_levels": [
-        { "effort": "none",    "description": "Thinking disabled" },
-        { "effort": "minimal", "description": "Minimal reasoning" },
-        { "effort": "low",     "description": "Low reasoning" },
-        { "effort": "medium",  "description": "Medium reasoning" },
-        { "effort": "high",    "description": "High reasoning" },
-        { "effort": "xhigh",   "description": "Extra-high reasoning" }
-      ],
-      "shell_type": "default",
-      "visibility": "list",
-      "supported_in_api": true,
-      "priority": 0,
-      "truncation_policy": { "mode": "tokens", "limit": 204800 },
-      "supports_parallel_tool_calls": true
-    },
-    {
-      "slug": "deepseek-v4-flash",
-      "display_name": "DeepSeek v4 Flash",
-      "default_reasoning_level": "medium",
-      "supported_reasoning_levels": [
-        { "effort": "none",    "description": "Thinking disabled" },
-        { "effort": "minimal", "description": "Minimal reasoning" },
-        { "effort": "low",     "description": "Low reasoning" },
-        { "effort": "medium",  "description": "Medium reasoning" },
-        { "effort": "high",    "description": "High reasoning" },
-        { "effort": "xhigh",   "description": "Extra-high reasoning" }
-      ],
-      "shell_type": "default",
-      "visibility": "list",
-      "supported_in_api": true,
-      "priority": 1,
-      "truncation_policy": { "mode": "tokens", "limit": 204800 },
-      "supports_parallel_tool_calls": true
-    }
-  ]
+  "slug": "<模型slug，英文小写+连字符>",
+  "display_name": "<显示名>",
+  "default_reasoning_level": "medium",
+  "supported_reasoning_levels": [
+    { "effort": "none",    "description": "Thinking disabled" },
+    { "effort": "minimal", "description": "Minimal reasoning" },
+    { "effort": "low",     "description": "Low reasoning" },
+    { "effort": "medium",  "description": "Medium reasoning" },
+    { "effort": "high",    "description": "High reasoning" },
+    { "effort": "xhigh",   "description": "Extra-high reasoning" }
+  ],
+  "shell_type": "default",
+  "visibility": "list",
+  "supported_in_api": true,
+  "priority": <0到N排序>,
+  "truncation_policy": { "mode": "tokens", "limit": 204800 },
+  "supports_parallel_tool_calls": true
 }
 ```
 
+至少放用户要的那个模型。鼓励多列几个该供应商的模型让用户选。
+
+**常见模型预填参考：**
+
+| 供应商 | 常见模型 slug |
+|--------|-------------|
+| DeepSeek | `deepseek-chat`, `deepseek-reasoner` |
+| 千问 | `qwen-plus`, `qwen-max`, `qwen-turbo` |
+| Groq | `llama-3.3-70b-versatile`, `mixtral-8x7b-32768` |
+| Mistral | `mistral-large-latest`, `mistral-small-latest` |
+| SiliconFlow | `Qwen/Qwen2.5-72B-Instruct`, `deepseek-ai/DeepSeek-V3` |
+| 智谱 | `glm-4-plus`, `glm-4-flash` |
+| Moonshot | `moonshot-v1-8k`, `moonshot-v1-32k` |
+| OpenRouter | 任意模型 slug，如 `openai/gpt-4o`, `anthropic/claude-3.5-sonnet` |
+
 ---
 
-### 步骤 7：修复 proxy.mjs 路由（关键！）
+### 第 7 步：修 proxy.mjs（关键！）
 
-codex-bridge 的 `proxy.mjs` 有两处必须修复，否则 Codex 请求无法到达。
+**先确认** codex-bridge 的 `proxy.mjs` 是否需要修。
 
-**打开** `~/.codex/codex-bridge/proxy.mjs`，做以下三处修改：
+codex-bridge 原始代码可能有两类问题：
 
-#### 7a：URL 路径解析
+#### 问题 A：URL query string 干扰路由
 
-在 `http.createServer` 回调开头（`const authHeader = ...` 之前），添加：
+`proxy.mjs` 用 `req.url` 直接匹配路由，但 Codex 请求带 `?query=params` 会导致匹配失败。
+
+**打开** `~/.codex/codex-bridge/proxy.mjs`
+
+找到 `http.createServer` 回调开头，在 `const authHeader =` 之前插入：
 
 ```js
 const urlPath = req.url.split("?")[0];
 ```
 
-然后将文件中**所有路由匹配**的 `req.url` 替换为 `urlPath`（约 4-6 处，如 `req.url === "/v1/models"` 改为 `urlPath === "/v1/models"`）。
+然后将文件中**所有路由判断**的 `req.url ===` 或 `req.url.startsWith(` 改为 `urlPath ===` / `urlPath.startsWith(`。
 
-#### 7b：/v1/models 免认证
+#### 问题 B：/v1/models 需要免认证 + 正确响应格式
 
-找到 auth gate 的 `isHealth` 行，改为：
+找 auth gate 区域（含 `isHealth` 的那几行），确保 `/v1/models` 和 `/models` 加入免认证列表：
 
 ```js
 const isHealth = req.method === "GET" && (
@@ -196,9 +229,7 @@ const isHealth = req.method === "GET" && (
 );
 ```
 
-#### 7c：模型列表响应增加 models 字段
-
-找到 `/v1/models` 的 `sendJson` 响应，改为：
+找到 `/v1/models` 路由的 `sendJson` 调用，改响应为：
 
 ```js
 sendJson(res, 200, {
@@ -209,11 +240,17 @@ sendJson(res, 200, {
 });
 ```
 
+#### 问题 C：多供应商支持检查
+
+如果 `proxy.mjs` 是单供应商版本（只读 `DEEPSEEK_API_KEY`），需要让它支持多供应商。检查 `.env` 中是否有 `PROVIDER_API_KEY` 和 `PROVIDER_BASE_URL` 字段，如果没有，告诉用户需要升级 codex-bridge 或修改 proxy.mjs 用通用的 `PROVIDER_*` 环境变量。
+
+**总之：修改完 proxy.mjs 后，确保所有需要的路由正确匹配、模型列表接口返回正确格式。**
+
 ---
 
-### 步骤 8：配置代理开机自启（macOS）
+### 第 8 步：macOS 开机自启
 
-**创建** `~/Library/LaunchAgents/com.codex.bridge.plist`：
+路径：`~/Library/LaunchAgents/com.codex.bridge.plist`
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -238,23 +275,23 @@ sendJson(res, 200, {
 </plist>
 ```
 
-然后执行：
+加载：
+
 ```bash
 launchctl load ~/Library/LaunchAgents/com.codex.bridge.plist
 ```
 
 ---
 
-### 步骤 9：Shell 环境变量
+### 第 9 步：Shell 环境变量
 
-追加到用户的 shell 配置文件（检查是 `~/.zshrc` 还是 `~/.bashrc`）：
+追加到用户 shell 配置（`~/.zshrc`）：
 
 ```bash
-# Codex DeepSeek 代理：绕过系统代理访问 localhost
+# codex-bridge 旁路系统代理
 export NO_PROXY="127.0.0.1,localhost${NO_PROXY:+,$NO_PROXY}"
 export no_proxy="127.0.0.1,localhost${no_proxy:+,$no_proxy}"
 
-# 快捷命令
 alias proxy-start='launchctl load ~/Library/LaunchAgents/com.codex.bridge.plist'
 alias proxy-stop='launchctl unload ~/Library/LaunchAgents/com.codex.bridge.plist'
 alias proxy-status='curl -s http://127.0.0.1:4000/health'
@@ -262,82 +299,81 @@ alias proxy-status='curl -s http://127.0.0.1:4000/health'
 
 ---
 
-### 步骤 10：验证
-
-全部配置完成后，执行验证：
+### 第 10 步：验证
 
 ```bash
-# 验证1：代理健康检查
+# 1. 代理是否活着
 curl -s http://127.0.0.1:4000/health
-# 预期: {"status":"ok","proxy":"codex-bridge","providers":["deepseek"]}
+# 期望: {"status":"ok"...}
 
-# 验证2：端到端测试
+# 2. Codex 端到端
 codex -c model_provider=local_proxy exec "回复一个字：好"
-# 预期输出包含 "好"
+# 期望输出包含"好"
 ```
 
-两步都通过后，告诉用户**重启 Codex 桌面版**即可使用。
+两步都通过 = 接入成功。告诉用户重启 Codex 桌面版使生效。
 
 ---
 
-## 🔧 故障排查（Codex 自动诊断）
+## 🔧 故障排查（遇到问题喂给 Codex）
 
-当用户反馈接入有问题时，按以下顺序排查：
+当用户反馈不工作时，按此优先级排查。**每一步都要给用户解释你在做什么、为什么。**
 
-### 排查 1：代理是否在运行？
+### 🔴 优先级 1：代理活着吗？
+
 ```bash
 curl -s http://127.0.0.1:4000/health
 ```
-- **无响应 / Connection refused** → 代理没启动。执行 `launchctl load ~/Library/LaunchAgents/com.codex.bridge.plist`，或手动 `cd ~/.codex/codex-bridge && node proxy.mjs` 查看报错。
-- **响应非 JSON** → 可能是系统代理拦截了 localhost。检查 `env | grep -i proxy`，确保 `NO_PROXY` 包含 `127.0.0.1,localhost`。
 
-### 排查 2：Codex 直连 api.openai.com
-**症状：** Codex 报错指向 `api.openai.com` 而非 `127.0.0.1:4000`。
-**原因：** `model_provider` 未生效，或 CC Switch 未启用。
-**修复：**
-1. 检查 `~/.codex/config.toml` 中 `model_provider = "local_proxy"` 是否存在
-2. 桌面版用户需确认 CC Switch 中 local_proxy 处于 Enabled 状态
-3. CLI 用户加 `-c model_provider=local_proxy` 参数
+- **Connection refused** → `launchctl load` 或手动 `node proxy.mjs` 看报错
+- **返回非 JSON / HTML** → 系统代理拦截了 localhost。检查 proxy 环境变量，加 `NO_PROXY`
 
-### 排查 3：502 Bad Gateway
-**原因：** 系统代理拦截 localhost + 代理路由不匹配。
-**修复：**
-1. 检查 `NO_PROXY` 环境变量已设置
-2. 检查 proxy.mjs 是否已执行步骤 7 的三处修复
+### 🔴 优先级 2：Codex 是不是绕过代理直连 OpenAI 了？
 
-### 排查 4：模型列表无 DeepSeek
-**原因：** Codex 默认从 OpenAI marketplace 拉模型。
-**修复：** 检查 `config.toml` 中 `model_catalog_json` 路径正确指向 `proxy-models.json`。
+Codex 报错提到 `api.openai.com` = model_provider 没生效。
 
-### 排查 5：config.toml 被反复覆盖
-**原因：** Codex/CC Switch 启动时会重写 config.toml。
-**修复：** 通过 CC Switch 添加 local_proxy 供应商并启用，让 CC Switch 管理配置持久化。
+检查：
+1. `~/.codex/config.toml` 里 `model_provider = "local_proxy"`
+2. CLI 加 `-c model_provider=local_proxy`
+3. 桌面版 CC Switch 中 `local_proxy` 是否为 Enabled
 
-### 排查 6：401 Unauthorized
-**原因：** 代理的 `PROXY_AUTH_KEY` 与 Codex 的 `auth.json` 中 `OPENAI_API_KEY` 不一致。
-**修复：** 确保两者值相同。重新生成 `.env` 并同步更新 `auth.json`。
+### 🟡 优先级 3：502 / 路由不匹配
+
+代理在跑但返回 502 = URL 匹配问题。
+
+→ 检查 proxy.mjs 步骤 7 的三处修复是否都做了。
+
+### 🟡 优先级 4：模型列表没有目标模型
+
+→ Codex 默认去 OpenAI marketplace 拉模型。检查 `model_catalog_json` 路径正确。
+
+### 🟡 优先级 5：config.toml 被 Codex/CC Switch 反复覆盖
+
+→ 通过 CC Switch UI 添加 `local_proxy` 供应商并启用，让它管理。
+
+### 🟢 优先级 6：401 Unauthorized
+
+→ `PROXY_AUTH_KEY` 与 `auth.json` 里的 `OPENAI_API_KEY` 对不上。从 `.env` 复制到 `auth.json`，值要完全一致。
 
 ---
 
-## 📋 推理级别对照
+## 📋 推理级别对照（所有模型通用）
 
-| Codex 设置 | DeepSeek 行为 |
-|-----------|--------------|
-| 关闭推理 | thinking: disabled |
-| 极低 / 低 | reasoning_effort: low |
-| 中 | reasoning_effort: medium |
-| 高 | reasoning_effort: high |
-| 极高 | reasoning_effort: xhigh |
+| Codex 推理设置 | API 端行为 |
+|---------------|-----------|
+| 关闭推理 | `thinking: disabled` / 不发送 reasoning |
+| 极低 / 低 | `reasoning_effort: low` |
+| 中 | `reasoning_effort: medium` |
+| 高 | `reasoning_effort: high` |
+| 极高 | `reasoning_effort: xhigh` |
 
 ---
 
 ## 🔄 模型切换
 
-告诉用户可在 Codex 对话中切换模型：
+用户可在对话中切换：
 ```
-/model deepseek-v4-pro      # 复杂编码
-/model deepseek-v4-flash    # 轻量编辑
-/model deepseek-reasoner    # 深度推理
+/model <模型slug>       # 切换到指定模型
 ```
 
 ---
@@ -346,4 +382,3 @@ curl -s http://127.0.0.1:4000/health
 
 - codex-bridge: https://github.com/wujfeng712-ui/codex-bridge
 - CC Switch: https://github.com/farion1231/cc-switch
-- DeepSeek API: https://platform.deepseek.com/api-docs
