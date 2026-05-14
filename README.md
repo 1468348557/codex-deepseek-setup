@@ -1,137 +1,146 @@
-# 🌍 Codex 万能模型接入 — 一个 Skill，接入任意大模型
+# 🐋 Codex × DeepSeek V4 — 一个 Skill，让 Codex 桌面版流畅使用 DeepSeek V4
 
 <p align="center">
   <img src="https://img.shields.io/badge/Codex-Desktop-blue?style=for-the-badge&logo=openai" alt="Codex">
-  <img src="https://img.shields.io/badge/Any_Model-DeepSeek|Qwen|Claude|Gemini|Groq|...-purple?style=for-the-badge" alt="Any Model">
-  <img src="https://img.shields.io/badge/Protocol-Responses_↔_Chat_Completions-green?style=for-the-badge" alt="Protocol Translation">
-  <img src="https://img.shields.io/badge/Setup-Skill_Autopilot-orange?style=for-the-badge" alt="Auto Setup">
+  <img src="https://img.shields.io/badge/DeepSeek-V4_Pro-purple?style=for-the-badge" alt="DeepSeek V4 Pro">
+  <img src="https://img.shields.io/badge/Bridge-codex--bridge-orange?style=for-the-badge" alt="codex-bridge">
+  <img src="https://img.shields.io/badge/Setup-One_Click-green?style=for-the-badge" alt="One Click Setup">
 </p>
 
 <p align="center">
-  <b>安装这个 Skill → 对 Codex 说"接入 XXX 模型" → 全自动搞定。</b><br>
-  不管 DeepSeek、千问还是 Groq，原理一样，Skill 替你干活。
+  <b>一个 Codex Skill，解决一个具体问题：Codex 桌面版接入 DeepSeek V4 Pro。</b><br>
+  安装 → 说一句话 → Codex 自己配好 → 开始用。
 </p>
 
 ---
 
-## 🪄 一句话
+## 🤔 问题
 
-Codex 只会说 Responses API，第三方模型只会说 Chat Completions API。
+Codex 桌面版默认只能用 OpenAI 的模型。
 
-**这个 Skill 教 Codex 怎么在两套协议间搭桥——然后 Codex 自己帮你搭。**
+DeepSeek V4 Pro 便宜、中文好、推理强——但它和 Codex 说的不是同一套协议。
+
+**Codex 说 Responses API，DeepSeek 说 Chat Completions API，两边天生对不上。**
 
 ---
 
-## ⚡ 三秒接入
+## ✨ 我做了什么
+
+写了一个 Codex Skill：`codex-deepseek-setup`。
+
+把协议翻译、代理配置、模型目录、路由修复、开机自启——全部打包进 Skill 里。
+
+**效果：你把 Skill 装好，对 Codex 说「接入 DeepSeek」，Codex 自己把剩下十步全干了。**
+
+```
+你：接入 DeepSeek，Key 是 sk-xxx
+
+Codex：好的，我开始配置。
+  ✓ 检查环境
+  ✓ 克隆 codex-bridge
+  ✓ 生成代理密钥
+  ✓ 写入 .env / config.toml / auth.json
+  ✓ 生成模型目录
+  ✓ 修复 proxy.mjs 路由
+  ✓ 配置开机自启
+  ✓ 验证通过 — curl health OK，codex exec 返回正常
+
+搞定，重启 Codex 即可使用 DeepSeek V4 Pro。
+```
+
+---
+
+## 🚀 怎么用
 
 ```bash
 # 1. 安装 Skill
-mkdir -p ~/.codex/skills/codex-model-integration
-cp codex-deepseek-setup.md ~/.codex/skills/codex-model-integration/SKILL.md
+mkdir -p ~/.codex/skills/codex-deepseek
+cp codex-deepseek-setup.md ~/.codex/skills/codex-deepseek/SKILL.md
 
-# 2. 打开 Codex，随便挑一个说
+# 2. 打开 Codex，说：
 ```
 
-> "帮我接入 DeepSeek"
->
-> "帮我把 Codex 换成通义千问"
->
-> "接入 Groq"
->
-> "Codex 模型连不上了帮我看看"
+> 帮我接入 DeepSeek
 
-**Codex 读 Skill → 识别你的目标模型 → 拉代理 → 写配置 → 修路由 → 验证 → 搞定。**
+或者：
+
+> 帮我把 Codex 换成 DeepSeek V4
+
+**Codex 会问你 DeepSeek API Key，剩下全自动。**
 
 ---
 
-## 🎯 支持的模型（代表性，任意 Chat Completions 都行）
+## 🏗️ 原理
 
-| 供应商 | 模型 | 接入难度 |
-|--------|------|---------|
-| DeepSeek | V4 Pro / Reasoner / Flash | ⭐ |
-| 通义千问 / Qwen | Plus / Max / Turbo | ⭐ |
-| Groq | Llama 3.3 70B / Mixtral | ⭐ |
-| Mistral | Large / Small | ⭐ |
-| SiliconFlow 硅基流动 | Qwen / DeepSeek / Llama | ⭐ |
-| 智谱 GLM | GLM-4 Plus / Flash | ⭐ |
-| Moonshot Kimi | moonshot-v1 | ⭐ |
-| 百川 Baichuan | Baichuan4 | ⭐ |
-| OpenRouter | Anthropic / OpenAI / Google 等 | ⭐ |
+```
+┌─────────┐  Responses API   ┌──────────────┐  Chat Completions   ┌──────────────┐
+│  Codex  │ ────────────────▶│ codex-bridge │ ──────────────────▶│  DeepSeek    │
+│ 桌面版   │ ◀────────────────│  :4000       │ ◀──────────────────│  V4 Pro      │
+└─────────┘  SSE / Tool Call  └──────────────┘  SSE / Reasoning   └──────────────┘
+```
 
-> 🤖 **原理通用：只要模型 API 兼容 OpenAI Chat Completions 格式，这个 Skill 就能接入。**
+- Codex 把请求发给本地 `localhost:4000`
+- codex-bridge 把 Responses API 翻译成 Chat Completions API 发给 DeepSeek
+- DeepSeek 返回的 SSE 流式、reasoning、tool call 再翻译回来给 Codex
+- 延迟 < 5ms，本地几乎无感
 
 ---
 
-## 🧠 为什么「一个 Skill 解决所有模型」？
+## 🤖 Skill 自动完成的 10 步
 
-```
-Codex   ──Responses API──▶  codex-bridge (:4000)  ──Chat Completions──▶  任意模型
-                              ↑ 本地双向协议翻译                              ↑
-                              所有模型的共同瓶颈                          所有模型的共同接口
-```
-
-**核心瓶颈只有一个：协议翻译。** 不同模型只是改个 base URL + API Key。
-
-Skill 里预置了常见供应商的 base URL、模型 slug、配置模板。碰上不在表的，用户给个 URL 就行。
-
----
-
-## 🚀 Skill 自动完成的全部步骤
-
-| # | 步骤 | 咋自动 |
-|---|------|--------|
-| 0 | 识别目标模型 | 对话中问清模型名 / API 地址 / Key |
+| # | 做什么 | 怎么自动 |
+|---|--------|----------|
+| 0 | 问清 API Key | 对话收集 |
 | 1 | 环境检查 | `node --version` |
-| 2 | 克隆代理 | `git clone codex-bridge` |
-| 3 | 生成密钥 + 写 .env | 自动生成 + 文件工具写入 |
-| 4 | 编辑 config.toml | 合并到已有配置 |
-| 5 | 写入 auth.json | 对齐代理密钥 |
-| 6 | 生成模型目录 | 根据供应商填充 model catalog |
-| 7 | 修复 proxy.mjs 路由 | 定位代码 + 精准修改 |
-| 8 | 配置开机自启 | macOS launchd plist |
-| 9 | 设置 Shell 变量 | NO_PROXY + 别名 |
+| 2 | 克隆代理 | `git clone` |
+| 3 | 生成密钥 + .env | 自动 openssl |
+| 4 | config.toml | 合并写入 |
+| 5 | auth.json | 对齐密钥 |
+| 6 | proxy-models.json | 模型目录 |
+| 7 | 🔑 修复 proxy.mjs 路由 | 精准改代码 |
+| 8 | 开机自启 | launchd plist |
+| 9 | Shell 别名 | .zshrc 追加 |
 | 10 | 端到端验证 | curl + codex exec |
 
 ---
 
-## 🔧 故障自愈
+## 🧪 实测
 
-Skill 内置了 6 级排查清单。接入出问题不用你查——**直接对 Codex 说"模型连不上了"**，Codex 按清单逐项诊断。
-
-| 优先级 | 问题 | Codex 自动检查 |
-|--------|------|---------------|
-| 🔴 P1 | 代理没跑 | `curl health` → 启动/报错分析 |
-| 🔴 P2 | 绕过代理直连 OpenAI | 检查 config.toml model_provider |
-| 🟡 P3 | 502 路由不匹配 | 检查 proxy.mjs 修复 |
-| 🟡 P4 | 模型列表不对 | 检查 model_catalog_json |
-| 🟡 P5 | 配置被反复覆盖 | 指导 CC Switch 持久化 |
-| 🟢 P6 | 401 认证失败 | 对齐 PROXY_AUTH_KEY 与 auth.json |
+| 环境 | 模型 | 结果 |
+|------|------|------|
+| macOS Sequoia | DeepSeek V4 Pro | ✅ 流畅 |
+| macOS Sequoia | DeepSeek V4 Flash | ✅ 流畅 |
+| macOS Sequoia | DeepSeek Reasoner | ✅ 流畅 |
 
 ---
 
-## 📦 仓库文件
+## 🔧 出了毛病？
+
+不用翻文档。直接对 Codex 说：
+
+> DeepSeek 连不上了，帮我看看
+
+Skill 内置了 6 级诊断清单，Codex 会逐项排查。
+
+---
+
+## 📦 文件
 
 ```
 .
-├── README.md                    # 你正在看的（人读）
-└── codex-deepseek-setup.md      # Skill 定义（Codex 读，核心）
+├── README.md                    # 你在看的
+└── codex-deepseek-setup.md      # Skill 本体（Codex 读这个）
 ```
 
 ---
 
-## 🔗 依赖
+## 🔗 感谢
 
-- [codex-bridge](https://github.com/wujfeng712-ui/codex-bridge) — 本地协议代理
-- [CC Switch](https://github.com/farion1231/cc-switch) — Codex 供应商切换（推荐）
-
----
-
-## ⭐ 值的话，给个 Star
-
-如果这个 Skill 帮你省了折腾模型接入的时间，Star ⭐ 让更多码农解放出来写代码，而不是配模型。
+- [codex-bridge](https://github.com/wujfeng712-ui/codex-bridge)
+- [CC Switch](https://github.com/farion1231/cc-switch)
 
 ---
 
 <p align="center">
-  <sub>原理统一，接入任意模型。Codex + Any LLM = ❤️</sub>
+  <b>一个 Skill，搞定一件事。⭐ Star 让更多人用上 DeepSeek + Codex。</b>
 </p>
